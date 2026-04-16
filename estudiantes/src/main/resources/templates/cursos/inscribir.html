@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Inscribir Estudiante</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="container mt-4">
+
+<h2>Inscribir estudiante en:
+    <strong th:text="${curso.nombre}"></strong>
+</h2>
+
+<h5>Estudiantes actualmente inscritos:</h5>
+<ul>
+    <li th:each="est : ${curso.estudiantes}" th:text="${est.nombre}">
+    </li>
+    <li th:if="${#sets.isEmpty(curso.estudiantes)}">
+        <em>Sin estudiantes inscritos aún.</em>
+    </li>
+</ul>
+
+<hr>
+
+<h5>Selecciona un estudiante para inscribir:</h5>
+<div th:each="estudiante : ${estudiantes}">
+    <!-- Solo muestra estudiantes que aún no están inscritos -->
+    <div th:if="${!curso.estudiantes.contains(estudiante)}">
+        <form th:action="@{'/cursos/' + ${curso.id} + '/inscribir/' + ${estudiante.id}}"
+              method="post" class="d-inline">
+            <button type="submit" class="btn btn-sm btn-success mb-1">
+                + <span th:text="${estudiante.nombre}"></span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<div th:if="${#sets.size(curso.estudiantes) == #lists.size(estudiantes)}">
+    <em class="text-muted">Todos los estudiantes ya están inscritos en este curso.</em>
+</div>
+
+<hr>
+<a href="/cursos" class="btn btn-secondary">Volver a Cursos</a>
+
+</body>
+</html>
