@@ -1,6 +1,11 @@
-# post2-u8 — Gestión de Cursos y Estudiantes con @ManyToMany
+# post2-u8 — Gestión de Cursos y Estudiantes con Autenticación y Roles
 
-Proyecto Spring Boot que implementa una relación bidireccional `@ManyToMany` entre las entidades `Curso` y `Estudiante` usando Spring Data JPA e Hibernate. Permite registrar inscripciones de estudiantes en cursos mediante una tabla de unión gestionada automáticamente.
+Proyecto Spring Boot completo que implementa:
+- ✅ Autenticación y autorización con Spring Security
+- ✅ Relación bidireccional `@ManyToMany` entre `Curso` y `Estudiante`
+- ✅ Sistema de roles (ADMIN y USER)
+- ✅ Interface moderna con Bootstrap 5.3
+- ✅ Gestión segura de usuarios con contraseñas encriptadas (BCrypt)
 
 ---
 
@@ -12,30 +17,52 @@ src/
     ├── java/com/universidad/estudiantes/
     │   ├── controller/
     │   │   ├── CursoController.java
-    │   │   └── EstudianteController.java
+    │   │   ├── EstudianteController.java
+    │   │   └── AuthController.java (nuevo)
     │   ├── model/
     │   │   ├── Curso.java
-    │   │   └── Estudiante.java
+    │   │   ├── Estudiante.java
+    │   │   └── Usuario.java (nuevo)
     │   ├── repository/
     │   │   ├── CursoRepository.java
-    │   │   └── EstudianteRepository.java
+    │   │   ├── EstudianteRepository.java
+    │   │   └── UsuarioRepository.java (nuevo)
     │   ├── service/
     │   │   ├── CursoService.java
-    │   │   └── EstudianteService.java
+    │   │   ├── EstudianteService.java
+    │   │   ├── UsuarioService.java (nuevo)
+    │   │   └── SecurityConfig.java (nuevo)
     │   └── EstudiantesApplication.java
     └── resources/
         ├── templates/
+        │   ├── auth/
+        │   │   ├── login.html
+        │   │   └── registro.html
         │   ├── cursos/
         │   │   ├── lista.html
         │   │   ├── formulario.html
         │   │   └── inscribir.html
-        │   └── estudiantes/
+        │   ├── admin/
+        │   │   └── panel.html
+        │   └── dashboard.html
         └── application.properties
 ```
 
 ---
 
 ## Entidades
+
+### `Usuario` (NUEVA)
+| Campo        | Tipo    | Restricciones                            |
+|--------------|---------|------------------------------------------|
+| `id`         | Long    | PK, autoincremental                      |
+| `nombre`     | String  | NOT NULL, máx. 100 caracteres            |
+| `email`      | String  | NOT NULL, único, válido, máx. 150 chars  |
+| `contrasenia`| String  | NOT NULL (BCrypt hash, nunca texto claro)|
+| `rol`        | String  | NOT NULL (ROLE_ADMIN o ROLE_USER)        |
+| `activo`     | boolean | Controla si el usuario puede acceder      |
+
+---
 
 ### `Estudiante`
 | Campo    | Tipo   | Restricciones                        |
@@ -84,11 +111,46 @@ private Set<Estudiante> estudiantes = new HashSet<>();
 │ id (PK)         │◄────────│ estudiante_id (FK) │         │ id (PK)          │
 │ nombre          │         │ curso_id (FK)      │────────►│ nombre           │
 │ email           │         └───────────────────┘         │ creditos         │
-└─────────────────┘                                        └──────────────────┘
+│ (relación M:M)  │                                       └──────────────────┘
+└─────────────────┘
 
+┌──────────────────┐
+│     usuarios     │
+├──────────────────┤
+│ id (PK)          │
+│ nombre           │
+│ email            │
+│ contrasenia      │
+│ rol              │
+│ activo           │
+└──────────────────┘
   Un estudiante puede estar en muchos cursos.
   Un curso puede tener muchos estudiantes.
-  La cardinalidad es N:M gestionada por la tabla de unión curso_estudiante.
+  La cardinalidad es N:M gestionada por curso_estudiante.
+```
+
+---
+
+## Flujo de Autenticación
+
+```
+[Visitante]
+    ↓
+[Página de Login]  ← Ingresa email y contraseña
+    ↓
+[Spring Security] → Valida contra BD (BCrypt)
+    ↓
+┌─────────────────────────────────────┐
+│ ¿Válido?                            │
+├─────────────┬───────────────────────┤
+│   NO        │         SÍ            │
+│ Error 401   │ ↓                     │
+│             │ [Dashboard]           │
+│             │   ↓                   │
+│             │ ¿ROLE_ADMIN?          │
+│             │ ├─ SÍ → Panel Admin   │
+│             │ └─ NO → Cursos        │
+└─────────────┴───────────────────────┘
 ```
 
 ---
@@ -130,34 +192,86 @@ spring.jpa.properties.jakarta.persistence.validation.group.pre-update=
 
 La aplicación quedará disponible en `http://localhost:8080`.
 
+### 4. Crear Usuario Admin (opcional - SQL directo)
+
+```sql
+-- Usuario admin con contraseña encriptada (ejemplo: "admin123")
+INSERT INTO usuarios (nombre, email, contrasenia, rol, activo) 
+VALUES ('Administrador', 'admin@universidad.edu', 
+        '$2a$10$2eXZc6JzQRRF/0JK.a8MiOvlxFZ3JWdX...', 'ROLE_ADMIN', true);
+```
+
 ---
 
 ## Endpoints Principales
 
-| Método | URL                                        | Descripción                        |
-|--------|--------------------------------------------|------------------------------------|
-| GET    | `/cursos`                                  | Lista todos los cursos             |
-| GET    | `/cursos/nuevo`                            | Formulario para crear curso        |
-| POST   | `/cursos/guardar`                          | Guarda un nuevo curso              |
-| GET    | `/cursos/{id}/inscribir`                   | Formulario de inscripción          |
-| POST   | `/cursos/{cursoId}/inscribir/{estudianteId}` | Inscribe un estudiante en un curso |
-| POST   | `/cursos/{cursoId}/desinscribir/{estudianteId}` | Desinscribe un estudiante      |
+### 🔐 Autenticación
+| Método | URL              | Descripción                    |
+|--------|------------------|--------------------------------|
+| GET    | `/login`         | Formulario de iniciar sesión   |
+| POST   | `/login`         | Procesa el login               |
+| GET    | `/registro`      | Formulario de registro         |
+| POST   | `/registro`      | Registra un nuevo usuario      |
+| POST   | `/logout`        | Cierra la sesión               |
+
+### 📊 Dashboard
+| Método | URL              | Descripción                    |
+|--------|------------------|--------------------------------|
+| GET    | `/`              | Dashboard principal            |
+| GET    | `/dashboard`     | Dashboard con info del usuario |
+
+### 📖 Cursos
+| Método | URL                                        | Descripción                        | Roles        |
+|--------|--------------------------------------------|------------------------------------|--------------|
+| GET    | `/cursos`                                  | Lista todos los cursos             | USER, ADMIN  |
+| GET    | `/cursos/nuevo`                            | Formulario para crear curso        | ADMIN        |
+| POST   | `/cursos/guardar`                          | Guarda un nuevo curso              | ADMIN        |
+| GET    | `/cursos/{id}/inscribir`                   | Formulario de inscripción          | USER, ADMIN  |
+| POST   | `/cursos/{cursoId}/inscribir/{estudianteId}` | Inscribe un estudiante en un curso | USER, ADMIN  |
+| POST   | `/cursos/{cursoId}/desinscribir/{estudianteId}` | Desinscribe un estudiante      | USER, ADMIN  |
+
+### ⚙️ Administración
+| Método | URL              | Descripción                    | Roles |
+|--------|------------------|--------------------------------|-------|
+| GET    | `/admin`         | Panel de administración        | ADMIN |
+
+---
+
+## Características de Seguridad
+
+✅ **Contraseñas Encriptadas**: Usa BCrypt para hashear contraseñas  
+✅ **Spring Security**: Implementa autenticación y autorización  
+✅ **CSRF Protection**: Activada por defecto en formularios  
+✅ **Validación de Datos**: Validaciones en servidor y cliente  
+✅ **Control de Acceso por Roles**: ROLE_ADMIN y ROLE_USER  
+✅ **Sesiones**: Manejo seguro de sesiones HTTP  
 
 ---
 
 ## Capturas de Pantalla
 
-### Lista de Cursos con Estudiantes Inscritos
-![Lista de cursos](capturas/ListaCursos.png)
+### 🔐 Iniciar Sesión
+![Login](capturas/login.png)
 
-### Formulario para Crear un Curso
-![Crear curso](capturas/CrearCurso.png)
+---
 
-### Formulario de Inscripción
-![Inscribir estudiante](capturas/InscribirEst.png)
+### 📝 Registro de Nuevo Usuario
+![Registro](capturas/registro.png)
 
-### Estudiante Agregado a un Curso
-![Agregar estudiante a curso](capturas/AgregarEstACurso.png)
+---
+
+### 📊 Dashboard Principal
+![Dashboard](capturas/dash-Estudiante.png)
+
+---
+
+### ⚙️ Panel de Administración
+![Panel Admin](capturas/PanelAdmin.png)
+
+---
+
+### 🚫 Error 403 - Acceso Denegado
+![Error 403](capturas/Error403.png)
 
 ---
 
@@ -167,18 +281,29 @@ La aplicación quedará disponible en `http://localhost:8080`.
 -- Verificar tablas generadas
 SHOW TABLES;
 
--- Verificar estructura de la tabla de unión
+-- Verificar estructura de usuarios
+DESCRIBE usuarios;
+
+-- Verificar tabla de unión
 DESCRIBE curso_estudiante;
 
 -- Ver inscripciones registradas
 SELECT * FROM curso_estudiante;
+
+-- Ver usuarios registrados
+SELECT id, nombre, email, rol, activo FROM usuarios;
 ```
 
 ---
 
 ## Notas Técnicas
 
-- La relación bidireccional se sincroniza mediante **helper methods** (`agregarEstudiante`, `quitarEstudiante`) en la entidad `Curso`, que actualizan ambos lados en memoria.
-- Las consultas usan `LEFT JOIN FETCH` para evitar el problema **N+1**: en lugar de una consulta por cada curso para obtener sus estudiantes, se obtiene todo en una sola consulta SQL.
-- Se usa `@JsonIgnore` en `Estudiante.cursos` para evitar referencias circulares en la serialización JSON.
-- La inyección de dependencias se realiza por **constructor** en todos los servicios y controladores.
+- **Relación bidireccional M:M**: Se sincroniza mediante **helper methods** en `Curso`
+- **Problema N+1**: Se resuelve con `LEFT JOIN FETCH` para cargar estudiantes de cursos en una sola consulta
+- **@JsonIgnore**: Evita referencias circulares en serialización JSON
+- **Inyección de dependencias**: Por constructor en servicios y controladores
+- **BCrypt**: Librería estándar de Spring Security para encriptar contraseñas
+- **Interfaz responsive**: Bootstrap 5.3 con diseño mobile-first
+- **Validaciones**: Anotaciones Jakarta Validation (`@NotBlank`, `@Email`, etc.)
+
+---
